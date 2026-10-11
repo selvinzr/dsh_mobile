@@ -1,0 +1,19 @@
+# --- Android / Gradle ---
+*.iml
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+output.json
+
+# --- IDE ---
+.idea/
+*.hprof
+
+# --- 本机调试产物（含抓包、截图、临时脚本）---
+_recon/
+*.log

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 从插画边缘取样的深紫，作为自适应图标背景层兜底 -->
+    <color name="ic_launcher_background">#1E0B33</color>
+</resources>
