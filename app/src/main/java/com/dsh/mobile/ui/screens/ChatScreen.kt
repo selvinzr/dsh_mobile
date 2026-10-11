@@ -213,8 +213,12 @@ fun ChatScreen(state: UiState, vm: AppViewModel, onOpenDrawer: () -> Unit) {
                             }
                         },
                     )
+                    // 置顶项要反映当前状态（已置顶时显示「取消置顶」），
+                    // 否则点了看不出变化
+                    val pinnedNow = state.openSessionId != null &&
+                        state.openSessionId in state.workspaceState.pinnedSessionIds
                     DropdownMenuItem(
-                        text = { Text("置顶") },
+                        text = { Text(if (pinnedNow) "取消置顶" else "置顶") },
                         leadingIcon = { Icon(Icons.Filled.PushPin, null) },
                         onClick = {
                             menuOpen = false
@@ -527,6 +531,23 @@ private fun Composer(state: UiState, vm: AppViewModel) {
         "*/*",
     )
 
+    // 系统语音输入兜底：
+    // 小米等 ROM 的 ASR 服务会拒绝第三方 App（返回 ERROR_INSUFFICIENT_PERMISSIONS，
+    // 即使我们已持有 RECORD_AUDIO）。这种情况下改用系统识别界面 —— 它由系统自己
+    // 拉起，权限与权限模型都不经过我们，是最可靠的兜底路径。
+    val systemVoice = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        val text = res.data
+            ?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+        if (!text.isNullOrBlank()) {
+            vm.updateDraft(if (state.draft.isBlank()) text else state.draft + text)
+        }
+        speechState = null
+        exitVoice(applyText = false)
+    }
+
     // 识别结果落定：写入草稿并退出语音态
     LaunchedEffect(speechState) {
         when (val sp = speechState) {
@@ -535,6 +556,27 @@ private fun Composer(state: UiState, vm: AppViewModel) {
                 exitVoice(applyText = false)
             }
             is com.dsh.mobile.core.SpeechState.Error -> {
+                // 系统识别服务拒绝 → 自动改走系统语音输入界面
+                if (sp.message.contains("系统语音服务拒绝")) {
+                    runCatching {
+                        systemVoice.launch(
+                            android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                putExtra(
+                                    android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                                    android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                                )
+                                putExtra(
+                                    android.speech.RecognizerIntent.EXTRA_LANGUAGE,
+                                    java.util.Locale.getDefault().toLanguageTag(),
+                                )
+                                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "请说话")
+                            },
+                        )
+                    }.onFailure {
+                        speechState = com.dsh.mobile.core.SpeechState.Error("设备没有可用的语音输入")
+                    }
+                    return@LaunchedEffect
+                }
                 // 语音态下错误留在条内展示；非语音态短暂提示
                 if (!voiceMode) {
                     kotlinx.coroutines.delay(2500)

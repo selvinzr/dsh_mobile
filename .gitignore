@@ -21,3 +21,8 @@ _recon/
 *.jks
 *.keystore
 keystore.properties
+
+# curl cookie jar 与临时请求体（含登录凭据，绝不入库）
+jar.txt
+body*.json
+*.cookies

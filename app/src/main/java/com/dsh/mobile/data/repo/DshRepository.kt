@@ -18,6 +18,8 @@ import com.dsh.mobile.data.net.PocketAuth
 import com.dsh.mobile.data.net.RpcClient
 import com.dsh.mobile.data.net.StreamMux
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
@@ -494,9 +496,50 @@ class DshRepository(context: Context) {
     fun closeFollow(sessionId: String) = mux.close("fl-${sessionId.takeLast(12)}")
 
     /**
-     * 请求服务端**重新下发快照**（原地重订阅）。
-     * 用于排队列表等需要权威刷新、而 session/projections 不可靠的场景。
+     * 读一次服务端权威的 inbox（排队列表）。
+     *
+     * **不要**用「对主订阅流 cancel + open」的方式刷新 —— 服务端会把同一 `streamId`
+     * 的第二次 `open` 判成非法请求，直接以 `1008 invalid Remote stream request`
+     * 关掉整条 WebSocket（protocol §7.8），表现就是每次刷新排队都把连接打断一次。
+     *
+     * 这里改为开一条**独立的一次性流**（唯一 streamId），拿到快照就关掉，
+     * 完全不动主订阅流。
      */
-    fun resubscribeFollow(sessionId: String) = mux.resubscribe("fl-${sessionId.takeLast(12)}")
+    suspend fun fetchInboxViaStream(
+        base: String,
+        sessionId: String,
+        timeoutMs: Long = 4_000,
+    ): List<QueuedMessage>? {
+        val streamId = "flq-" + java.util.UUID.randomUUID().toString().take(8)
+        val flow = mux.open(
+            base,
+            streamId,
+            "session/follow",
+            buildJsonObject {
+                putJsonObject("request") {
+                    putJsonObject("address") {
+                        put("kind", "session")
+                        put("sessionId", sessionId)
+                    }
+                    put("maxMessages", 1)
+                    put("assistantStream", false)
+                }
+            },
+        )
+        return try {
+            val snapshot = withTimeoutOrNull(timeoutMs) {
+                // firstOrNull 拿到首个匹配帧后会取消收集，不会挂到超时
+                flow.firstOrNull { o -> (o["type"] as? JsonPrimitive)?.contentOrNull == "snapshot" }
+            }
+            snapshot?.let { parseInbox(it["projections"] as? JsonObject) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } finally {
+            mux.close(streamId)
+        }
+    }
+
     fun shutdown() = mux.shutdown()
 }

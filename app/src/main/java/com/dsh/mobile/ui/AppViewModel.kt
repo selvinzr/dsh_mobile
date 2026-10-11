@@ -1035,7 +1035,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val now = System.currentTimeMillis()
         if (now - lastQueueRefresh < 3000) return
         lastQueueRefresh = now
-        runCatching { repo.resubscribeFollow(sid) }
+        viewModelScope.launch {
+            runCatching {
+                // 独立一次性流读 inbox：不再 cancel+open 主订阅流（那会触发服务端 1008 关连接）
+                repo.fetchInboxViaStream(base = s.base, sessionId = sid)
+            }.onSuccess { list ->
+                // null 表示这次没读到（超时/失败）→ 保持现状，不要清空
+                if (list != null) _state.update { it.copy(queued = list) }
+            }
+        }
     }
 
     /** 编辑排队消息。 */
@@ -1142,6 +1150,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val ctx = getApplication<Application>()
                 val encoded = withContext(kotlinx.coroutines.Dispatchers.IO) { encodeImage(ctx, uri) }
                     ?: throw IllegalStateException("无法读取图片")
+                // 按内容 sha256 缓存字节：DSH 落库时把图片转成
+                // {type:"image", attachment:{attachmentId:"sha256:<hash>"}}，记录里不再有 base64，
+                // 气泡渲染就靠这个哈希回到这里的文件。
+                val localPath = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching {
+                        val bytes = android.util.Base64.decode(encoded.base64, android.util.Base64.DEFAULT)
+                        val hex = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+                            .joinToString("") { "%02x".format(it) }
+                        val dir = java.io.File(ctx.cacheDir, "attachments").apply { mkdirs() }
+                        java.io.File(dir, hex).apply { writeBytes(bytes) }.absolutePath
+                    }.getOrNull()
+                }
                 _state.update {
                     it.copy(
                         attachments = it.attachments + PendingAttachment(
@@ -1151,6 +1171,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             bytes = encoded.base64.length * 3L / 4,
                             kind = "image",
                             base64 = encoded.base64,
+                            localPath = localPath,
                         ),
 
                     )

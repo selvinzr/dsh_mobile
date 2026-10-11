@@ -80,7 +80,19 @@ class SpeechSession(private val context: Context) {
                         when (error) {
                             SpeechRecognizer.ERROR_NO_MATCH -> "没有听清，再说一次"
                             SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "没有检测到说话"
-                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "缺少麦克风权限"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                                // 这个错误码不等于"本应用没有权限"：
+                                // 小米等 ROM 的 ASR 服务对第三方 App 有限制时也会返回它。
+                                // 先看自己到底有没有权限，再给出对应提示，避免误导用户。
+                                if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                        context,
+                                        android.Manifest.permission.RECORD_AUDIO,
+                                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    "系统语音服务拒绝了本次识别，正在改用系统语音输入…"
+                                } else {
+                                    "需要麦克风权限"
+                                }
                             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别服务忙，稍后再试"
                             SpeechRecognizer.ERROR_NETWORK,
                             SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "网络异常，无法转写"

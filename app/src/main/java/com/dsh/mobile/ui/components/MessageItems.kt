@@ -64,8 +64,13 @@ fun UserBubble(item: ChatItem.User, timestamp: String? = null, onOpenFile: ((nam
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     // 图片：直接渲染缩略图（不再是"图标+N张"）
                     val images = item.attachments.filter { it.isImage }
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     images.forEach { att ->
-                        val bmp = remember(att.base64) { decodeThumb(att.base64) }
+                        // 记录里通常只有 attachmentId（sha256 引用），base64 只在发送时存在；
+                        // 所以先试内联数据，再按哈希去本地缓存（发送时按同一哈希存过）取文件。
+                        val bmp = remember(att.base64, att.attachmentId) {
+                            decodeThumb(att.base64) ?: decodeThumbFile(ctx, att.attachmentId)
+                        }
                         if (bmp != null) {
                             Image(
                                 bitmap = bmp.asImageBitmap(),
@@ -453,3 +458,26 @@ internal fun decodeThumb(base64: String?): android.graphics.Bitmap? = runCatchin
     val opts = BitmapFactory.Options().apply { inSampleSize = sample }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
 }.getOrNull()
+
+/**
+ * 按 `sha256:<hash>` 附件引用去本地缓存取图。
+ *
+ * DSH 落库后图片是内容寻址引用，记录里没有字节；发送时我们按同一哈希
+ * 把字节写进了 `cacheDir/attachments/`，所以能一对一命中。
+ * 别处发来的历史图片取不到 → 返回 null，由调用方回退成图标。
+ */
+internal fun decodeThumbFile(
+    context: android.content.Context,
+    attachmentId: String?,
+): android.graphics.Bitmap? {
+    val hex = attachmentId?.removePrefix("sha256:")?.takeIf { it.isNotBlank() } ?: return null
+    val file = java.io.File(java.io.File(context.cacheDir, "attachments"), hex)
+    if (!file.exists()) return null
+    return runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        var sample = 1
+        while (bounds.outWidth / sample > 512) sample *= 2
+        BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+    }.getOrNull()
+}

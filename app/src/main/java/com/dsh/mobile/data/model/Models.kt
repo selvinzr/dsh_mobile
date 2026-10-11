@@ -49,10 +49,16 @@ data class UserAttachment(
     val kind: String,
     val name: String,
     val mediaType: String,
-    /** 图片：内联 base64 */
+    /** 图片：内联 base64（仅发送时的 wire 格式会带，落库记录里通常没有） */
     val base64: String? = null,
-    /** 文档：上传凭证（历史消息里只有它，无法再取回字节） */
+    /** 文档：上传凭证 */
     val receiptId: String? = null,
+    /**
+     * 图片：内容寻址引用 `sha256:<hash>`。
+     * 记录里存的通常是**引用**而不是 base64，所以渲染要靠这个哈希
+     * 去本地缓存（发送时按同一哈希存过）取回字节。
+     */
+    val attachmentId: String? = null,
 ) {
     val isImage: Boolean get() = kind == "image"
 }
@@ -186,6 +192,8 @@ fun ChatState.reduceEvent(ev: JsonObject): ChatState {
                         name = o.str("name") ?: "图片",
                         mediaType = o.str("mediaType") ?: "image/jpeg",
                         base64 = o.str("data"),
+                        // 落库后图片通常变成内容寻址引用：{type:"image", attachment:{attachmentId,…}}
+                        attachmentId = o.obj("attachment")?.str("attachmentId"),
                     )
                     "file" -> UserAttachment(
                         kind = "file",
