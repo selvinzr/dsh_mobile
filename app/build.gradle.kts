@@ -1,8 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
+
+// 本地签名凭据（keystore.properties 不入库；CI 可用环境变量）
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+fun secret(key: String): String? =
+    keystoreProps.getProperty(key) ?: System.getenv(key)
 
 android {
     namespace = "com.dsh.mobile"
@@ -22,16 +33,12 @@ android {
      */
     signingConfigs {
         create("release") {
-            val storePath = providers.gradleProperty("DSH_STORE_FILE").orNull
-                ?: System.getenv("DSH_STORE_FILE")
+            val storePath = secret("DSH_STORE_FILE")
             if (storePath != null) {
-                storeFile = file(storePath)
-                storePassword = providers.gradleProperty("DSH_STORE_PASSWORD").orNull
-                    ?: System.getenv("DSH_STORE_PASSWORD")
-                keyAlias = providers.gradleProperty("DSH_KEY_ALIAS").orNull
-                    ?: System.getenv("DSH_KEY_ALIAS")
-                keyPassword = providers.gradleProperty("DSH_KEY_PASSWORD").orNull
-                    ?: System.getenv("DSH_KEY_PASSWORD")
+                storeFile = rootProject.file(storePath)
+                storePassword = secret("DSH_STORE_PASSWORD")
+                keyAlias = secret("DSH_KEY_ALIAS")
+                keyPassword = secret("DSH_KEY_PASSWORD")
             }
         }
     }
@@ -44,9 +51,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            if (providers.gradleProperty("DSH_STORE_FILE").orNull != null ||
-                System.getenv("DSH_STORE_FILE") != null
-            ) {
+            if (secret("DSH_STORE_FILE") != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
