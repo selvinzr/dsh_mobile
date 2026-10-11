@@ -415,11 +415,11 @@ fun ChatUiState.reduce(event: SessionEvent): ChatUiState = when (event.type) {
 |---|---|---|
 | `assistantStream` 增量帧格式未知 | 🔴 高 | P0.6 时用 `_recon/` 脚本抓真实帧；退化方案：不订阅 token 级流式，改为收到 `assistant/message` 整块后再渲染 |
 | `session/cancel` / `session/control` 参数未确认 | 🟡 中 | 开工前用 `discover-args.mjs` 或读控制器源码补上（`skip`/`control` 逻辑集中在 `SessionControlController`） |
-| WebSocket 在隧道模式下行为未验证 | 🟡 中 | 先只支持局域网；隧道作为 P3 |
+| WebSocket 在隧道模式下行为 | ✅ 已验证 | 实机确认外网模式下连接成功，无需额外适配 |
 | DSH 重启导致频繁掉登录 | 🟡 中 | App 内做好自动重登，PIN 可记住 |
 | 事件类型可能随版本变化 | 🟡 中 | reducer 用 `else -> this` 兜底，未知类型忽略而非崩溃 |
 | `dsh-pocket` 升级改变代理行为 | 🟢 低 | 协议文档记录版本号，升级后跑 `_recon/` 脚本回归 |
-| 明文 HTTP 传输 | 🟡 中 | 局域网可接受；隧道模式走 HTTPS |
+| 明文 HTTP 传输 | 🟡 中 | 局域网为明文 HTTP；外网模式由隧道终止 TLS（HTTPS/WSS）|
 
 > ✅ **已解决的初始风险**：`session/prompt` 与 `session/page` 的参数结构已从控制器源码确认，
 > 见 [`protocol.md` 7.3](./protocol.md#73-核心方法的-request-结构源码验证)。
@@ -428,7 +428,7 @@ fun ChatUiState.reduce(event: SessionEvent): ChatUiState = when (event.type) {
 
 ## 9. 验收标准（P1 完成定义）
 
-- [ ] 手机与电脑同一 Wi-Fi，输入 PIN 后可进入会话列表
+- [x] 手机与电脑同一 Wi-Fi，输入 PIN 后可进入会话列表（外网模式同样已验证）
 - [ ] 能在手机上新建会话并看到历史
 - [ ] 发送一条消息，能看到**逐字流式**输出
 - [ ] 能中断正在运行的回合

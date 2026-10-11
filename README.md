@@ -10,15 +10,22 @@
 
 ## 依赖
 
-本客户端**必须配合 [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket) 使用** —— 它是运行在电脑侧的中转服务，负责把 DSH 的本地接口暴露到局域网，并提供手机配对用的二维码与 PIN。
+本客户端**必须配合 [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket) 使用** —— 它是运行在电脑侧的中转服务，负责把 DSH 的接口暴露出来，并提供手机配对用的二维码与 PIN。
+
+支持两种连接模式，**扫码流程完全一样**：
+
+| 模式 | 场景 | 说明 |
+|---|---|---|
+| **局域网** | 手机与电脑同一 Wi-Fi | 明文 HTTP，延迟最低 |
+| **外网模式** | 手机在外网（蜂窝 / 其他网络）| 由 dsh-pocket 提供隧道（如 Cloudflare），走 HTTPS/WSS |
 
 | 组件 | 位置 | 作用 |
 |---|---|---|
 | **DSH**（DeepSeek Harness） | 电脑 | 本体，执行任务 |
-| **[dsh-pocket](https://github.com/shaobeichen/dsh-pocket)** | 电脑 | **必需**：局域网中转 + 配对二维码 + PIN 校验 |
+| **[dsh-pocket](https://github.com/shaobeichen/dsh-pocket)** | 电脑 | **必需**：中转（局域网 / 外网隧道）+ 配对二维码 + PIN 校验 |
 | **dsh_mobile**（本项目） | 手机 | 原生 Android 客户端 |
 
-所以完整链路是：**手机 App ←(局域网)→ dsh-pocket ←→ DSH**。没有 dsh-pocket，本 App 无法连接。
+所以完整链路是：**手机 App ←(局域网 / 外网隧道)→ dsh-pocket ←→ DSH**。没有 dsh-pocket，本 App 无法连接。
 
 ---
 
@@ -40,14 +47,14 @@
 ## 环境要求
 
 - **手机**：Android 8.0+（minSdk 26）
-- **电脑**：运行 DSH + 启动 [dsh-pocket](https://github.com/shaobeichen/dsh-pocket)（提供局域网中转、配对二维码与 PIN）
-- 手机与电脑在**同一局域网**
+- **电脑**：运行 DSH + 启动 [dsh-pocket](https://github.com/shaobeichen/dsh-pocket)（提供中转、配对二维码与 PIN）
+- **网络**：手机能访问到 dsh-pocket —— 同一局域网，**或** dsh-pocket 开启外网模式（两者扫码流程相同）
 
 ## 快速开始
 
 ### 1. 电脑侧
 
-启动 [dsh-pocket](https://github.com/shaobeichen/dsh-pocket)，它会显示一个二维码和 PIN（PIN 也可读 `~/.dsh/dsh-pocket/token-lan`）。
+启动 [dsh-pocket](https://github.com/shaobeichen/dsh-pocket)，它会显示一个二维码和 PIN（局域网模式下 PIN 也可读 `~/.dsh/dsh-pocket/token-lan`）。
 
 ### 2. 构建安装
 

@@ -89,7 +89,7 @@ fun LoginScreen(state: UiState, vm: AppViewModel) {
             Text("连接 DSH", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(
-                if (needPin) "地址已就绪，输入电脑上的 PIN 即可" else "手机与电脑连同一个 Wi-Fi，扫码即可",
+                if (needPin) "地址已就绪，输入电脑上的 PIN 即可" else "扫码即可连接（局域网或外网模式均可）",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
