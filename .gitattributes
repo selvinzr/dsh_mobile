@@ -1,0 +1,12 @@
+# 统一行尾：源码 LF，Windows 脚本 CRLF
+# 否则 gradlew 在 Linux/macOS 上会因 CRLF 无法执行
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew text eol=lf
+*.png binary
+*.jpg binary
+*.webp binary
+*.jar binary
+*.apk binary
+*.keystore binary
