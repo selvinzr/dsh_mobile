@@ -17,3 +17,7 @@ output.json
 # --- 本机调试产物（含抓包、截图、临时脚本）---
 _recon/
 *.log
+# 签名文件与凭据（绝不入库）
+*.jks
+*.keystore
+keystore.properties
