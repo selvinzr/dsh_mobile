@@ -38,8 +38,11 @@ fun MarkdownText(
     baseColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val blocks = remember(markdown) { parseBlocks(markdown) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        blocks.forEach { block -> BlockView(block, baseColor) }
+    // 允许长按选中 / 复制正文（Compose 的 Text 默认可选性关闭）
+    androidx.compose.foundation.text.selection.SelectionContainer {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            blocks.forEach { block -> BlockView(block, baseColor) }
+        }
     }
 }
 

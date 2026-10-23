@@ -173,6 +173,7 @@ fun ChatScreen(state: UiState, vm: AppViewModel, onOpenDrawer: () -> Unit) {
                             item = item,
                             showHeader = (blocks.getOrNull(index - 1) as? ChatBlock.Single)
                                 ?.item !is ChatItem.Assistant,
+                            onCopy = { vm.copyText(item.text) },
                         )
                     }
 

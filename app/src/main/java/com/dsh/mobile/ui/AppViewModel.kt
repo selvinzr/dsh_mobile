@@ -582,6 +582,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** 复制文本到剪贴板（长按消息的快捷操作）。 */
+    fun copyText(text: String) {
+        if (text.isBlank()) return
+        val ctx = getApplication<Application>()
+        val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+        cm?.setPrimaryClip(android.content.ClipData.newPlainText("DSH", text))
+        viewModelScope.launch {
+            _state.update { it.copy(bannerId = it.bannerId + 1, banner = "已复制") }
+        }
+    }
+
     /** 撤回上一题的答案（多题时可用）。 */
     fun undoLastAnswer() {
         val q = _state.value.pendingQuestion ?: return

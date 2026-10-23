@@ -6,6 +6,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -151,11 +152,13 @@ fun UserBubble(
                         if (item.text.isNotBlank()) Spacer(Modifier.height(5.dp))
                     }
                     if (item.text.isNotBlank()) {
-                        Text(
-                            item.text,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(
+                                item.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
                     }
                 }
             }
@@ -172,7 +175,13 @@ fun UserBubble(
 }
 
 @Composable
-fun AssistantBlock(item: ChatItem.Assistant, timestamp: String? = null, showHeader: Boolean = true) {
+fun AssistantBlock(
+    item: ChatItem.Assistant,
+    timestamp: String? = null,
+    showHeader: Boolean = true,
+    /** 长按复制整条正文 */
+    onCopy: (() -> Unit)? = null,
+) {
     // 二级折叠：没有正文、只有过程内容（思维链 / 工具）的消息，默认收成一行状态。
     // 有正文的消息（最终回答）保持原样，避免把真正要看的内容藏起来。
     val isProcessOnly = item.text.isBlank() &&
@@ -256,7 +265,17 @@ fun AssistantBlock(item: ChatItem.Assistant, timestamp: String? = null, showHead
             }
         }
         if (item.text.isNotBlank()) {
-            MarkdownText(item.text, Modifier.padding(start = 4.dp))
+            MarkdownText(
+                item.text,
+                Modifier
+                    .padding(start = 4.dp)
+                    .then(
+                        if (onCopy != null) Modifier.combinedClickable(
+                            onClick = {},
+                            onLongClick = onCopy,
+                        ) else Modifier
+                    ),
+            )
         }
         }
     }
@@ -541,6 +560,8 @@ private fun LabeledMono(label: String, body: String, color: Color? = null) {
             shape = RoundedCornerShape(6.dp),
             modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
         ) {
+            // 工具输入/输出允许长按复制（命令、报错最常需要复制）
+            androidx.compose.foundation.text.selection.SelectionContainer {
             Text(
                 body.take(4000),
                 Modifier
@@ -550,6 +571,7 @@ private fun LabeledMono(label: String, body: String, color: Color? = null) {
                 color = color ?: MaterialTheme.colorScheme.onSurface,
                 softWrap = false,
             )
+            }
         }
     }
 }
