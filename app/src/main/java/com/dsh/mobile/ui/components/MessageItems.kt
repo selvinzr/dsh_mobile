@@ -248,6 +248,71 @@ fun AssistantBlock(item: ChatItem.Assistant, timestamp: String? = null, showHead
     }
 }
 
+/**
+ * 一个"过程段"的合并行：把连续 N 步（每步 1 次工具调用）收成一行。
+ * 点开才显示组内每一次工具调用与思维链。
+ */
+@Composable
+fun RunRow(run: com.dsh.mobile.data.model.ChatBlock.Run) {
+    var expanded by remember(run.key) { mutableStateOf(false) }
+    val label = when {
+        run.running -> "正在调用工具…"
+        run.failed > 0 -> "调用工具 ${run.toolCalls.size} 次（${run.failed} 失败）"
+        run.toolCalls.isNotEmpty() -> "调用工具 ${run.toolCalls.size} 次"
+        else -> "思考过程"
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp)
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+            shape = RoundedCornerShape(10.dp),
+            onClick = { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    null,
+                    Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                if (!expanded && run.toolNames.isNotEmpty()) {
+                    Text(
+                        run.toolNames.joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 180.dp),
+                    )
+                }
+            }
+        }
+        if (expanded) {
+            Spacer(Modifier.height(6.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                run.items.forEach { step ->
+                    if (step.reasoning.isNotBlank()) ReasoningChip(step.reasoning)
+                    step.toolCalls.forEach { ToolCard(it) }
+                }
+            }
+        }
+    }
+}
+
 /** 过程摘要行：一行状态 + 展开箭头。点击展开工具/思维链明细。 */
 @Composable
 private fun ProcessSummaryRow(

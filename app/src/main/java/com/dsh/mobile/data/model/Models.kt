@@ -12,7 +12,16 @@ data class SessionSummary(
     val blank: Boolean,
     val modelProvider: String? = null,
     val modelName: String? = null,
+    /** 子 agent 会话会指向父会话；顶层会话为 null */
+    val parentSessionId: String? = null,
+    /** 子 agent 标签（来自 projections.values.subagent.label） */
+    val subagentLabel: String? = null,
+    /** 子 agent 序号（用于组内排序） */
+    val subagentSeq: Int? = null,
 ) {
+    /** 是否为子 agent 会话（不应出现在会话列表的"其他"里） */
+    val isSubagent: Boolean get() = parentSessionId != null || subagentLabel != null
+
     val modelLabel: String?
         get() = modelName?.let { n -> n.substringAfterLast(':') }
 }
@@ -115,6 +124,9 @@ fun parseSessionSummary(o: JsonObject): SessionSummary {
         blank = o.bool("blank") ?: false,
         modelProvider = next?.str("provider"),
         modelName = next?.str("model"),
+        parentSessionId = o.str("parentSessionId")?.takeIf { it.isNotBlank() },
+        subagentLabel = values?.obj("subagent")?.str("label"),
+        subagentSeq = values?.obj("subagent")?.get("seq")?.jsonPrimitive?.intOrNull,
     )
 }
 

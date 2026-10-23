@@ -61,6 +61,19 @@ sealed interface SessionRow {
         val expanded: Boolean = true,
     ) : SessionRow
     data class Item(val summary: SessionSummary, val pinned: Boolean, val archived: Boolean) : SessionRow
+
+    /**
+     * 某条会话下的**子 agent 任务**折叠行。
+     *
+     * 子 agent 会话（`parentSessionId != null`）不应混进「其他」变成几百条 item ——
+     * 它们是父会话派生出来的任务，像任务列表一样挂在父会话下面，默认收起。
+     */
+    data class SubagentGroup(
+        /** 父会话 id，用于记忆展开状态 */
+        val parentId: String,
+        val children: List<SessionSummary>,
+        val expanded: Boolean = false,
+    ) : SessionRow
 }
 
 enum class HeaderKind { Pinned, Workspace, Other, Archived }
@@ -91,6 +104,8 @@ data class UiState(
     val maxMessages: Int = 30,
     /** 抽屉里展开的工作区（workspaceId 集合）。 */
     val expandedWorkspaces: Set<String> = emptySet(),
+    /** 已展开子任务组的父会话 id */
+    val expandedSubagentParents: Set<String> = emptySet(),
     /** 目录浏览器数据（已知目录树）。 */
     val knownDirRoots: List<DirNode> = emptyList(),
     val sending: Boolean = false,
@@ -227,6 +242,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** 折叠/展开抽屉里的某个工作区分组。 */
+    /** 展开/收起某条会话下的子 agent 任务列表。 */
+    fun toggleSubagentGroup(parentId: String) {
+        _state.update { st ->
+            val cur = st.expandedSubagentParents
+            st.copy(
+                expandedSubagentParents = if (parentId in cur) cur - parentId else cur + parentId,
+            )
+        }
+    }
+
     fun toggleWorkspaceExpanded(workspaceId: String) {
         _state.update { st ->
             val cur = st.expandedWorkspaces
@@ -584,13 +609,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val rows = mutableListOf<SessionRow>()
         val used = mutableSetOf<String>()
 
+        // 子 agent 会话按父会话索引：挂在父会话下面，默认收起
+        val childrenByParent = s.sessions
+            .filter { it.isSubagent && it.parentSessionId != null }
+            .filter { it.blank.not() }
+            .groupBy { it.parentSessionId!! }
+            .mapValues { (_, v) -> v.sortedBy { it.subagentSeq ?: Int.MAX_VALUE } }
+
+        /** 输出一条会话；若它有子 agent，紧跟一个可折叠的子任务组。 */
+        fun addItem(x: SessionSummary, pinned: Boolean, isArchived: Boolean) {
+            rows += SessionRow.Item(x, pinned = pinned, archived = isArchived)
+            val kids = childrenByParent[x.sessionId]
+            if (!kids.isNullOrEmpty()) {
+                rows += SessionRow.SubagentGroup(
+                    parentId = x.sessionId,
+                    children = kids,
+                    expanded = x.sessionId in s.expandedSubagentParents,
+                )
+            }
+        }
+
         // 1) 置顶
         val pinned = s.workspaceState.pinnedSessionIds.mapNotNull { byId[it] }.filter { matches(it) }
         if (pinned.isNotEmpty()) {
             rows += SessionRow.Header("置顶", pinned.size, HeaderKind.Pinned)
             pinned.forEach {
                 used += it.sessionId
-                rows += SessionRow.Item(it, pinned = true, archived = it.sessionId in archived)
+                addItem(it, pinned = true, isArchived = it.sessionId in archived)
             }
         }
 
@@ -615,19 +660,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 // 无论是否展开都标记 used，避免折叠分组的会话漏进「其他」
                 items.forEach { used += it.sessionId }
                 if (expanded) items.forEach {
-                    rows += SessionRow.Item(it, pinned = false, archived = false)
+                    addItem(it, pinned = false, isArchived = false)
                 }
             }
         }
 
         // 3) 不属于任何工作区的会话
+        //    **排除子 agent** —— 它们是父会话派生的任务，不是独立会话；
+        //    否则「其他」会被几百条子任务塞满（实测出现过 1091 条）。
         val others = s.sessions
             .filter { it.sessionId !in used && it.sessionId !in archived && it.blank.not() }
+            .filter { !it.isSubagent }
             .filter { matches(it) }
             .sortedByDescending { it.updatedAt }
         if (others.isNotEmpty()) {
             rows += SessionRow.Header("其他", others.size, HeaderKind.Other)
-            others.forEach { rows += SessionRow.Item(it, pinned = false, archived = false) }
+            others.forEach { addItem(it, pinned = false, isArchived = false) }
         }
 
         // 4) 已归档（默认折叠）

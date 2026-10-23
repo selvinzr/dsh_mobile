@@ -63,6 +63,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dsh.mobile.data.model.ChatBlock
+import com.dsh.mobile.data.model.toBlocks
 import com.dsh.mobile.data.model.ChatItem
 import com.dsh.mobile.data.model.PendingQuestion
 import com.dsh.mobile.ui.AppViewModel
@@ -70,6 +72,7 @@ import com.dsh.mobile.ui.Dialog
 import com.dsh.mobile.ui.UiState
 import com.dsh.mobile.ui.components.AssistantBlock
 import com.dsh.mobile.ui.components.LiveBlock
+import com.dsh.mobile.ui.components.RunRow
 import com.dsh.mobile.ui.components.UserBubble
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -137,6 +140,9 @@ fun ChatScreen(state: UiState, vm: AppViewModel, onOpenDrawer: () -> Unit) {
         val composerDp = with(androidx.compose.ui.platform.LocalDensity.current) {
             composerHeightPx.toDp()
         }
+        // 先按过程段合并再渲染：DSH 每步发一条独立消息，不合并就是十几行「调用工具 1 次」
+        val blocks = remember(state.chat.items) { state.chat.items.toBlocks() }
+
         LazyColumn(
             state = listState,
             modifier = Modifier
@@ -148,13 +154,27 @@ fun ChatScreen(state: UiState, vm: AppViewModel, onOpenDrawer: () -> Unit) {
             if (state.hasMoreHistory || state.loadingMore) {
                 item(key = "load-more") { LoadMoreRow(state.loadingMore) { vm.loadMoreHistory() } }
             }
-            itemsIndexed(state.chat.items, key = { _, it -> it.key }) { index, item ->
-                when (item) {
-                    is ChatItem.User -> UserBubble(item, onOpenFile = { name, mime -> vm.openAttachment(context, name, mime, null) })
-                    is ChatItem.Assistant -> AssistantBlock(
-                        item = item,
-                        showHeader = state.chat.items.getOrNull(index - 1) !is ChatItem.Assistant,
-                    )
+            itemsIndexed(blocks, key = { _, b: ChatBlock ->
+                when (b) {
+                    is ChatBlock.Single -> b.item.key
+                    is ChatBlock.Run -> b.key
+                }
+            }) { index, block ->
+                when (block) {
+                    is ChatBlock.Single -> when (val item = block.item) {
+                        is ChatItem.User -> UserBubble(
+                            item,
+                            onOpenFile = { name, mime -> vm.openAttachment(context, name, mime, null) },
+                        )
+
+                        is ChatItem.Assistant -> AssistantBlock(
+                            item = item,
+                            showHeader = (blocks.getOrNull(index - 1) as? ChatBlock.Single)
+                                ?.item !is ChatItem.Assistant,
+                        )
+                    }
+
+                    is ChatBlock.Run -> RunRow(block)
                 }
             }
             if (live) {

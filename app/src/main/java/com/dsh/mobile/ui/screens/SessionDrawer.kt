@@ -175,6 +175,7 @@ fun SessionDrawer(
                         when (row) {
                             is SessionRow.Header -> "h-${row.kind}-${row.workspaceId ?: row.title}"
                             is SessionRow.Item -> row.summary.sessionId
+                            is SessionRow.SubagentGroup -> "sg-${row.parentId}"
                         }
                     }) { row ->
                         when (row) {
@@ -191,6 +192,16 @@ fun SessionDrawer(
                                 },
                                 onLongClick = { actionsFor = row.summary },
                                 onMore = { actionsFor = row.summary },
+                            )
+
+                            is SessionRow.SubagentGroup -> SubagentGroupRow(
+                                group = row,
+                                openSessionId = state.openSessionId,
+                                onToggle = { vm.toggleSubagentGroup(row.parentId) },
+                                onOpen = { child ->
+                                    vm.openSession(child)
+                                    onClose()
+                                },
                             )
                         }
                     }
@@ -358,6 +369,99 @@ private fun SectionHeader(
                         Modifier.size(15.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 一条会话下的子 agent 任务列表（默认收起）。
+ * 子 agent 会话不再散落在「其他」里，而是作为父会话的"任务"呈现。
+ */
+@Composable
+private fun SubagentGroupRow(
+    group: SessionRow.SubagentGroup,
+    openSessionId: String?,
+    onToggle: () -> Unit,
+    onOpen: (com.dsh.mobile.data.model.SessionSummary) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(9.dp))
+                .clickable { onToggle() }
+                .padding(start = 34.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (group.expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                null,
+                Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.outline,
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Filled.CallSplit,
+                null,
+                Modifier.size(13.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "子任务 ${group.children.size}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (group.expanded) {
+            group.children.forEach { child ->
+                val selected = child.sessionId == openSessionId
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 42.dp, end = 12.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.surfaceContainer
+                            else Color.Transparent
+                        )
+                        .clickable { onOpen(child) }
+                        .padding(vertical = 7.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.ExpandMore,
+                        null,
+                        Modifier.size(13.dp),
+                        tint = MaterialTheme.colorScheme.outline,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            child.subagentLabel?.takeIf { it.isNotBlank() }
+                                ?: child.title.ifBlank { "(子任务)" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            relativeTime(child.updatedAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
+                    if (child.running) {
+                        CircularProgressIndicator(
+                            Modifier.size(13.dp),
+                            strokeWidth = 1.5.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
             }
         }
