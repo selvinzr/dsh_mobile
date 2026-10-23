@@ -788,9 +788,11 @@ private fun NormalComposer(
                 .padding(vertical = 11.dp)
         ) {
             if (state.draft.isEmpty()) {
+                // placeholder 用固定的简短提示，**不要用会话标题** ——
+                // 标题看着像已经输入的内容，容易让人以为草稿里已经有字。
                 val hint = when (speechState) {
                     is com.dsh.mobile.core.SpeechState.Error -> speechState.message
-                    else -> state.openSessionTitle.ifBlank { "发送消息…" }
+                    else -> "询问 DSH"
                 }
                 Text(
                     hint,
