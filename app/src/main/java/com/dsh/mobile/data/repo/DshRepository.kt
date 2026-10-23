@@ -576,5 +576,29 @@ class DshRepository(context: Context) {
         rpc.call(base, "userQuestions/answer", args)
     }
 
+    /**
+     * 按 `attachmentId` 取回图片字节（**正式 RPC**）。
+     *
+     * 契约（源码 `session/attachment`）：
+     * `session/attachment({sessionId, attachmentId}) -> { attachment, data: base64 }`
+     *
+     * 记录里的图片是内容寻址引用（`sha256:...`）而不是内联 base64，
+     * 所以历史图片 / 别的设备发的图片，都要靠这个接口取回。
+     */
+    suspend fun fetchAttachmentBytes(
+        base: String,
+        sessionId: String,
+        attachmentId: String,
+    ): String? {
+        val args = buildJsonObject {
+            putJsonObject("request") {
+                put("sessionId", sessionId)
+                put("attachmentId", attachmentId)
+            }
+        }
+        val value = rpc.call(base, "session/attachment", args)
+        return value.jsonObject["data"]?.jsonPrimitive?.contentOrNull
+    }
+
     fun shutdown() = mux.shutdown()
 }

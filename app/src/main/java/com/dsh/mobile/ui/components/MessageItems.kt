@@ -48,7 +48,15 @@ import com.dsh.mobile.ui.theme.MonoTextStyle
 import com.dsh.mobile.data.model.ToolCallInfo
 
 @Composable
-fun UserBubble(item: ChatItem.User, timestamp: String? = null, onOpenFile: ((name: String, mediaType: String) -> Unit)? = null) {
+fun UserBubble(
+    item: ChatItem.User,
+    timestamp: String? = null,
+    onOpenFile: ((name: String, mediaType: String) -> Unit)? = null,
+    /** 本地没缓存时，请求按 attachmentId 从服务端拉取 */
+    onNeedImage: ((attachmentId: String) -> Unit)? = null,
+    /** 图片缓存变更计数：变化后重新尝试解码 */
+    imageCacheVersion: Int = 0,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -68,8 +76,14 @@ fun UserBubble(item: ChatItem.User, timestamp: String? = null, onOpenFile: ((nam
                     images.forEach { att ->
                         // 记录里通常只有 attachmentId（sha256 引用），base64 只在发送时存在；
                         // 所以先试内联数据，再按哈希去本地缓存（发送时按同一哈希存过）取文件。
-                        val bmp = remember(att.base64, att.attachmentId) {
+                        val bmp = remember(att.base64, att.attachmentId, imageCacheVersion) {
                             decodeThumb(att.base64) ?: decodeThumbFile(ctx, att.attachmentId)
+                        }
+                        // 本地没有字节（历史图片 / 别的设备发的）→ 请求服务端拉取并缓存
+                        androidx.compose.runtime.LaunchedEffect(att.attachmentId, bmp == null) {
+                            if (bmp == null) {
+                                att.attachmentId?.let { onNeedImage?.invoke(it) }
+                            }
                         }
                         if (bmp != null) {
                             Image(

@@ -104,6 +104,8 @@ data class UiState(
     val maxMessages: Int = 30,
     /** 抽屉里展开的工作区（workspaceId 集合）。 */
     val expandedWorkspaces: Set<String> = emptySet(),
+    /** 已落盘的图片（sha256 hex），用于触发气泡重组 */
+    val cachedImages: Set<String> = emptySet(),
     /** 已展开子任务组的父会话 id */
     val expandedSubagentParents: Set<String> = emptySet(),
     /** 目录浏览器数据（已知目录树）。 */
@@ -541,6 +543,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                         banner = "提交回答失败：${e.readable()}",
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * 按需把某张图片的字节拉到本地缓存（key = sha256 hex），供气泡渲染。
+     *
+     * 记录里图片是内容寻址引用，历史图片/别的设备发的图片本地没有字节，
+     * 只能通过 `session/attachment` 拉一次并落盘，之后复用。
+     */
+    fun ensureImageCached(attachmentId: String) {
+        val s = _state.value
+        val sid = s.openSessionId ?: return
+        val hex = attachmentId.removePrefix("sha256:")
+        if (hex.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val ctx = getApplication<Application>()
+                val dir = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    java.io.File(ctx.cacheDir, "attachments").apply { mkdirs() }
+                }
+                val file = java.io.File(dir, hex)
+                if (file.exists()) return@launch
+                val b64 = repo.fetchAttachmentBytes(s.base, sid, attachmentId) ?: return@launch
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching {
+                        file.writeBytes(android.util.Base64.decode(b64, android.util.Base64.DEFAULT))
+                    }
+                }
+                // 触发重组：把该 id 记进已就绪集合
+                _state.update { it.copy(cachedImages = it.cachedImages + hex) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 拉取失败就保持图标回退，不打断阅读
             }
         }
     }

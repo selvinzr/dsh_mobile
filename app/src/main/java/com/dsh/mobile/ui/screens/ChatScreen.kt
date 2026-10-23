@@ -165,6 +165,8 @@ fun ChatScreen(state: UiState, vm: AppViewModel, onOpenDrawer: () -> Unit) {
                         is ChatItem.User -> UserBubble(
                             item,
                             onOpenFile = { name, mime -> vm.openAttachment(context, name, mime, null) },
+                            onNeedImage = { attId -> vm.ensureImageCached(attId) },
+                            imageCacheVersion = state.cachedImages.size,
                         )
 
                         is ChatItem.Assistant -> AssistantBlock(
