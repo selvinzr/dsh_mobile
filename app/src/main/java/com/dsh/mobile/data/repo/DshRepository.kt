@@ -541,5 +541,40 @@ class DshRepository(context: Context) {
         }
     }
 
+    /**
+     * 回答 ask-user 提问（**走正式 RPC**，而不是把答案拼成文本发 prompt）。
+     *
+     * 契约（源码 `userQuestions/answer`）：
+     * ```
+     * userQuestions/answer(agent: SessionId, callId: ToolCallId,
+     *                      answer: { answers: [{ id, selected: string[], custom?: string }] })
+     * ```
+     * 一次提交**全部**问题的答案（one item per question of the call）。
+     * 服务端把它作为 user 消息 steer 进 agent，并关闭该提问投影。
+     */
+    suspend fun answerUserQuestion(
+        base: String,
+        sessionId: String,
+        callId: String,
+        answers: List<Pair<String, List<String>>>,
+    ) {
+        val args = buildJsonObject {
+            // 注意：wire 字段名是 agentId（不是 agent）—— 服务端 descriptor 明确要求
+            put("agentId", sessionId)
+            put("callId", callId)
+            putJsonObject("answer") {
+                putJsonArray("answers") {
+                    answers.forEach { (id, selected) ->
+                        addJsonObject {
+                            put("id", id)
+                            putJsonArray("selected") { selected.forEach { add(it) } }
+                        }
+                    }
+                }
+            }
+        }
+        rpc.call(base, "userQuestions/answer", args)
+    }
+
     fun shutdown() = mux.shutdown()
 }

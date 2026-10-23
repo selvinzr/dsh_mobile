@@ -464,21 +464,67 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * DSH 的机制是把答案作为 user/message（source.kind = 'user-question-reply'）steer 给 agent，
      * 客户端侧等价做法是用 mode=steer 发一条消息；没有"放弃提问"的 Remote 方法。
      */
+    /**
+     * 回答当前**这一道**问题。
+     *
+     * ask-user 一次可能带多个问题（questions[]）。旧实现只渲染第一题，
+     * 且答完就把整个提问清空 → 表现为「多题只能答第一个」。
+     * 现在：逐题记录答案，**全部答完**才把汇总文本一次性发给 Agent。
+     */
     fun answerQuestion(text: String) {
         val s = _state.value
-        val sessionId = s.openSessionId ?: return
+        val sid = s.openSessionId ?: return
+        val q = s.pendingQuestion ?: return
+        val current = q.next ?: return
         if (text.isBlank()) return
+
+        val answered = q.copy(answers = q.answers + (current.id to listOf(text)))
+        if (!answered.done) {
+            // 还有下一题：只更新状态，暂不提交
+            _state.update { it.copy(pendingQuestion = answered) }
+            return
+        }
+
         _state.update { it.copy(pendingQuestion = null, draft = "", sending = true) }
         viewModelScope.launch {
             try {
-                repo.prompt(s.base, sessionId, text, steer = true)
-                _state.update { it.copy(sending = false) }
+                // 走正式 RPC：userQuestions/answer(agent, callId, {answers:[{id,selected[]}]})
+                // 一次提交全部问题；服务端会把它 steer 进 agent 并关闭该提问。
+                if (answered.callId.isNotBlank()) {
+                    repo.answerUserQuestion(
+                        base = s.base,
+                        sessionId = sid,
+                        callId = answered.callId,
+                        answers = answered.questions.map { qq -> qq.id to answered.answers[qq.id].orEmpty() },
+                    )
+                } else {
+                    // 兜底：拿不到 callId 时，用结构化文本 steer（旧路径）
+                    repo.prompt(s.base, sid, answered.answerText(), steer = true)
+                }
+                _state.update {
+                    it.copy(sending = false, bannerId = it.bannerId + 1, banner = "已提交回答")
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                _state.update { it.copy(sending = false, draft = text, banner = e.readable()) }
+                throw e
+            } catch (e: Exception) {
+                // 失败时把提问放回去，别让用户白答一遍
+                _state.update {
+                    it.copy(
+                        sending = false,
+                        pendingQuestion = answered,
+                        bannerId = it.bannerId + 1,
+                        banner = "提交回答失败：${e.readable()}",
+                    )
+                }
             }
         }
+    }
+
+    /** 撤回上一题的答案（多题时可用）。 */
+    fun undoLastAnswer() {
+        val q = _state.value.pendingQuestion ?: return
+        val last = q.questions.lastOrNull { it.id in q.answers } ?: return
+        _state.update { it.copy(pendingQuestion = q.copy(answers = q.answers - last.id)) }
     }
 
     private fun startWorkspaceFollow() {

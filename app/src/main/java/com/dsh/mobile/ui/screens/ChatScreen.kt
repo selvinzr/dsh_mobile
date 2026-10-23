@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -251,7 +253,13 @@ fun ChatScreen(state: UiState, vm: AppViewModel, onOpenDrawer: () -> Unit) {
                 .align(Alignment.BottomCenter)
                 .onSizeChanged { composerHeightPx = it.height }
         ) {
-            state.pendingQuestion?.let { q -> QuestionCard(q) { vm.answerQuestion(it) } }
+            state.pendingQuestion?.let { q ->
+                QuestionCard(
+                    q = q,
+                    onAnswer = { vm.answerQuestion(it) },
+                    onUndo = { vm.undoLastAnswer() },
+                )
+            }
             Composer(state, vm)
         }
 
@@ -1113,8 +1121,14 @@ private fun QueuedChip(
 // ---------- ask-user 提问卡片 ----------
 
 @Composable
-private fun QuestionCard(q: PendingQuestion, onAnswer: (String) -> Unit) {
-    val first = q.first ?: return
+private fun QuestionCard(
+    q: PendingQuestion,
+    onAnswer: (String) -> Unit,
+    onUndo: () -> Unit = {},
+) {
+    // 显示"当前这一道还没答的题"；全部答完时组件通常已被清空，兜底不渲染
+    val cur = q.next ?: return
+    val answeredCount = q.answers.size
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1126,47 +1140,120 @@ private fun QuestionCard(q: PendingQuestion, onAnswer: (String) -> Unit) {
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    first.header.ifBlank { "Agent 提问" },
+                    cur.header.ifBlank { "Agent 提问" },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.weight(1f),
                 )
+                // 多题时显示进度，让用户知道还有几题
+                q.progress?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.75f),
+                    )
+                }
             }
+
+            // 已答的题折叠成一行摘要，方便回看
+            if (answeredCount > 0) {
+                Spacer(Modifier.height(4.dp))
+                q.questions.filter { it.id in q.answers }.forEach { done ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.CheckCircle,
+                            null,
+                            Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "${done.header.ifBlank { done.question }}：${q.answers[done.id]}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                TextButton(onClick = onUndo, contentPadding = PaddingValues(0.dp)) {
+                    Text("撤回上一题", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+
             Spacer(Modifier.height(6.dp))
             Text(
-                first.question,
+                cur.question,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
-            if (first.options.isNotEmpty()) {
+            cur.detail?.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
+                )
+            }
+            if (cur.options.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
+                // multiSelect：先勾选再提交；单选：点一下即作答
+                val picked = mutableListOf<String>()
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    first.options.forEach { opt ->
+                    cur.options.forEach { opt ->
+                        val checked = opt.label in picked
                         Surface(
-                            color = MaterialTheme.colorScheme.surface,
+                            color = if (checked) MaterialTheme.colorScheme.surfaceContainerHighest
+                            else MaterialTheme.colorScheme.surface,
                             shape = RoundedCornerShape(10.dp),
-                            onClick = { onAnswer(opt.label) },
+                            onClick = {
+                                if (cur.multiSelect) {
+                                    if (checked) picked.remove(opt.label) else picked.add(opt.label)
+                                } else {
+                                    onAnswer(opt.label)
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                Text(opt.label, style = MaterialTheme.typography.bodyMedium)
-                                opt.description?.takeIf { it.isNotBlank() }?.let {
-                                    Text(
-                                        it,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (cur.multiSelect) {
+                                    Icon(
+                                        if (checked) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                                        null,
+                                        Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text(opt.label, style = MaterialTheme.typography.bodyMedium)
+                                    opt.description?.takeIf { it.isNotBlank() }?.let {
+                                        Text(
+                                            it,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+                    if (cur.multiSelect) {
+                        Spacer(Modifier.height(2.dp))
+                        Button(
+                            onClick = {
+                                if (picked.isNotEmpty()) onAnswer(picked.joinToString("、"))
+                            },
+                            enabled = picked.isNotEmpty(),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("提交本题（可多选）") }
+                    }
                 }
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "回答会以消息发送给 agent；若回合未继续，用右上角「中断」结束",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f),
-            )
         }
     }
 }
