@@ -159,6 +159,12 @@ fun UserBubble(item: ChatItem.User, timestamp: String? = null, onOpenFile: ((nam
 
 @Composable
 fun AssistantBlock(item: ChatItem.Assistant, timestamp: String? = null, showHeader: Boolean = true) {
+    // 二级折叠：没有正文、只有过程内容（思维链 / 工具）的消息，默认收成一行状态。
+    // 有正文的消息（最终回答）保持原样，避免把真正要看的内容藏起来。
+    val isProcessOnly = item.text.isBlank() &&
+        (item.toolCalls.isNotEmpty() || item.reasoning.isNotBlank())
+    var expanded by remember(item.key) { mutableStateOf(false) }
+
     Column(
         Modifier
             .fillMaxWidth()
@@ -191,17 +197,108 @@ fun AssistantBlock(item: ChatItem.Assistant, timestamp: String? = null, showHead
             Spacer(Modifier.height(4.dp))
         }
 
-        if (item.reasoning.isNotBlank()) {
-            ReasoningChip(item.reasoning)
-            Spacer(Modifier.height(6.dp))
+        if (isProcessOnly) {
+            // 一行状态：正在思考 / 正在调用工具 / 已完成 N 次工具调用
+            ProcessSummaryRow(item = item, expanded = expanded) { expanded = !expanded }
+            if (expanded) {
+                Spacer(Modifier.height(6.dp))
+                if (item.reasoning.isNotBlank()) {
+                    ReasoningChip(item.reasoning)
+                    Spacer(Modifier.height(6.dp))
+                }
+                if (item.toolCalls.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item.toolCalls.forEach { ToolCard(it) }
+                    }
+                }
+            }
+        } else {
+            // 有正文：正文永远显示；过程内容收在可展开的一行里
+            if (item.reasoning.isNotBlank() || item.toolCalls.isNotEmpty()) {
+            val done = item.toolCalls.count { it.result != null }
+            ProcessSummaryRow(
+                item = item,
+                expanded = expanded,
+                forceLabel = if (item.toolCalls.isEmpty()) {
+                    "思考过程"
+                } else {
+                    "调用工具 $done/${item.toolCalls.size} 次"
+                },
+            ) { expanded = !expanded }
+            if (expanded) {
+                Spacer(Modifier.height(6.dp))
+                if (item.reasoning.isNotBlank()) {
+                    ReasoningChip(item.reasoning)
+                    Spacer(Modifier.height(6.dp))
+                }
+                if (item.toolCalls.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item.toolCalls.forEach { ToolCard(it) }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+            } else {
+                Spacer(Modifier.height(4.dp))
+            }
         }
         if (item.text.isNotBlank()) {
             MarkdownText(item.text, Modifier.padding(start = 4.dp))
         }
-        if (item.toolCalls.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                item.toolCalls.forEach { ToolCard(it) }
+        }
+    }
+}
+
+/** 过程摘要行：一行状态 + 展开箭头。点击展开工具/思维链明细。 */
+@Composable
+private fun ProcessSummaryRow(
+    item: ChatItem.Assistant,
+    expanded: Boolean,
+    forceLabel: String? = null,
+    onToggle: () -> Unit,
+) {
+    val label = forceLabel ?: run {
+        val running = item.toolCalls.any { it.result == null }
+        val done = item.toolCalls.count { it.result != null }
+        val failed = item.toolCalls.count { it.isError }
+        when {
+            running -> "正在调用工具…"
+            item.toolCalls.isNotEmpty() && failed > 0 -> "调用工具 $done/${item.toolCalls.size} 次（$failed 失败）"
+            item.toolCalls.isNotEmpty() -> "调用工具 ${item.toolCalls.size} 次"
+            else -> "正在思考…"
+        }
+    }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f),
+        shape = RoundedCornerShape(10.dp),
+        onClick = onToggle,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                null,
+                Modifier.size(15.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            // 工具名摘要，让人一眼知道在做什么
+            if (!expanded && item.toolCalls.isNotEmpty()) {
+                Text(
+                    item.toolCalls.joinToString(" · ") { it.name }.take(40),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
